@@ -1,7 +1,7 @@
 {
-  "name": "@tensorflow-models/qna",
+  "name": "tensorflow-qna-local-model",
   "version": "1.0.1",
-  "description": "Question and Answer model (Mobile BERT)",
+  "description": "Question and Answer model (Mobile BERT) that can be loaded in local",
   "main": "dist/index.js",
   "unpkg": "dist/qna.min.js",
   "jsdelivr": "dist/qna.min.js",
@@ -10,7 +10,7 @@
   "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tensorflow/tfjs-models.git"
+    "url": "https://github.com/spaghiajoeojo/tfjs-qna-model.git"
   },
   "peerDependencies": {
     "@tensorflow/tfjs-converter": "^3.0.0",

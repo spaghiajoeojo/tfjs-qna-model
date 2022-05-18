@@ -17,7 +17,7 @@
 import * as tfconv from '@tensorflow/tfjs-converter';
 import * as tf from '@tensorflow/tfjs-core';
 
-import {BertTokenizer, CLS_INDEX, loadTokenizer, SEP_INDEX, Token} from './bert_tokenizer';
+import { BertTokenizer, CLS_INDEX, loadTokenizer, SEP_INDEX, Token } from './bert_tokenizer';
 
 const MODEL_URL = 'https://tfhub.dev/tensorflow/tfjs-model/mobilebert/1';
 const INPUT_SIZE = 384;
@@ -60,6 +60,13 @@ export interface ModelConfig {
    * Wheter the url is from tfhub.
    */
   fromTFHub?: boolean;
+
+  /**
+   * An optional string that specifies custom url of the vocab json. This
+   * is useful for area/countries that don't have access to the model hosted on
+   * GCP.
+   */
+  vocabUrl?: string;
 }
 
 /**
@@ -83,7 +90,7 @@ interface Feature {
   inputMask: number[];
   segmentIds: number[];
   origTokens: Token[];
-  tokenToOrigMap: {[key: number]: number};
+  tokenToOrigMap: { [key: number]: number };
 }
 
 interface AnswerIndex {
@@ -98,15 +105,15 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
 
   constructor(private modelConfig: ModelConfig) {
     if (this.modelConfig == null) {
-      this.modelConfig = {modelUrl: MODEL_URL, fromTFHub: true};
+      this.modelConfig = { modelUrl: MODEL_URL, fromTFHub: true };
     }
     if (this.modelConfig.fromTFHub == null) {
       this.modelConfig.fromTFHub = false;
     }
   }
   private process(
-      query: string, context: string, maxQueryLen: number, maxSeqLen: number,
-      docStride = 128): Feature[] {
+    query: string, context: string, maxQueryLen: number, maxSeqLen: number,
+    docStride = 128): Feature[] {
     // always add the question mark to the end of the query.
     query = query.replace(/\?/g, '');
     query = query.trim();
@@ -115,7 +122,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const queryTokens = this.tokenizer.tokenize(query);
     if (queryTokens.length > maxQueryLen) {
       throw new Error(
-          `The length of question token exceeds the limit (${maxQueryLen}).`);
+        `The length of question token exceeds the limit (${maxQueryLen}).`);
     }
 
     const origTokens = this.tokenizer.processInput(context.trim());
@@ -137,14 +144,14 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     // length. To deal with this we do a sliding window approach, where we
     // take chunks of the up to our max length with a stride of
     // `doc_stride`.
-    const docSpans: Array<{start: number, length: number}> = [];
+    const docSpans: Array<{ start: number, length: number }> = [];
     let startOffset = 0;
     while (startOffset < allDocTokens.length) {
       let length = allDocTokens.length - startOffset;
       if (length > maxContextLen) {
         length = maxContextLen;
       }
-      docSpans.push({start: startOffset, length});
+      docSpans.push({ start: startOffset, length });
       if (startOffset + length === allDocTokens.length) {
         break;
       }
@@ -154,7 +161,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const features = docSpans.map(docSpan => {
       const tokens = [];
       const segmentIds = [];
-      const tokenToOrigMap: {[index: number]: number} = {};
+      const tokenToOrigMap: { [index: number]: number } = {};
       tokens.push(CLS_INDEX);
       segmentIds.push(0);
       for (let i = 0; i < queryTokens.length; i++) {
@@ -180,14 +187,14 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
         inputMask.push(0);
         segmentIds.push(0);
       }
-      return {inputIds, inputMask, segmentIds, origTokens, tokenToOrigMap};
+      return { inputIds, inputMask, segmentIds, origTokens, tokenToOrigMap };
     });
     return features;
   }
 
   async load() {
     this.model = await tfconv.loadGraphModel(
-        this.modelConfig.modelUrl, {fromTFHub: this.modelConfig.fromTFHub});
+      this.modelConfig.modelUrl, { fromTFHub: this.modelConfig.fromTFHub });
     // warm up the backend
     const batchSize = 1;
     const inputIds = tf.ones([batchSize, INPUT_SIZE], 'int32');
@@ -200,7 +207,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
       global_step: tf.scalar(1, 'int32')
     });
 
-    this.tokenizer = await loadTokenizer();
+    this.tokenizer = await loadTokenizer(this.modelConfig);
   }
 
   /**
@@ -212,12 +219,12 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
   async findAnswers(question: string, context: string): Promise<Answer[]> {
     if (question == null || context == null) {
       throw new Error(
-          'The input to findAnswers call is null, ' +
-          'please pass a string as input.');
+        'The input to findAnswers call is null, ' +
+        'please pass a string as input.');
     }
 
     const features =
-        this.process(question, context, MAX_QUERY_LEN, MAX_SEQ_LEN);
+      this.process(question, context, MAX_QUERY_LEN, MAX_SEQ_LEN);
     const inputIdArray = features.map(f => f.inputIds);
     const segmentIdArray = features.map(f => f.segmentIds);
     const inputMaskArray = features.map(f => f.inputMask);
@@ -225,19 +232,19 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const batchSize = features.length;
     const result = tf.tidy(() => {
       const inputIds =
-          tf.tensor2d(inputIdArray, [batchSize, INPUT_SIZE], 'int32');
+        tf.tensor2d(inputIdArray, [batchSize, INPUT_SIZE], 'int32');
       const segmentIds =
-          tf.tensor2d(segmentIdArray, [batchSize, INPUT_SIZE], 'int32');
+        tf.tensor2d(segmentIdArray, [batchSize, INPUT_SIZE], 'int32');
       const inputMask =
-          tf.tensor2d(inputMaskArray, [batchSize, INPUT_SIZE], 'int32');
+        tf.tensor2d(inputMaskArray, [batchSize, INPUT_SIZE], 'int32');
       return this.model.execute(
-                 {
-                   input_ids: inputIds,
-                   segment_ids: segmentIds,
-                   input_mask: inputMask,
-                   global_step: globalStep
-                 },
-                 ['start_logits', 'end_logits']) as [tf.Tensor2D, tf.Tensor2D];
+        {
+          input_ids: inputIds,
+          segment_ids: segmentIds,
+          input_mask: inputMask,
+          global_step: globalStep
+        },
+        ['start_logits', 'end_logits']) as [tf.Tensor2D, tf.Tensor2D];
     });
     const logits = await Promise.all([result[0].array(), result[1].array()]);
     // dispose all intermediate tensors
@@ -248,13 +255,13 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const answers = [];
     for (let i = 0; i < batchSize; i++) {
       answers.push(this.getBestAnswers(
-          logits[0][i], logits[1][i], features[i].origTokens,
-          features[i].tokenToOrigMap, context, i));
+        logits[0][i], logits[1][i], features[i].origTokens,
+        features[i].tokenToOrigMap, context, i));
     }
 
     return answers.reduce((flatten, array) => flatten.concat(array), [])
-        .sort((logitA, logitB) => logitB.score - logitA.score)
-        .slice(0, PREDICT_ANSWER_NUM);
+      .sort((logitA, logitB) => logitB.score - logitA.score)
+      .slice(0, PREDICT_ANSWER_NUM);
   }
 
   /**
@@ -265,9 +272,9 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
    * @param tokenToOrigMap token to index mapping
    */
   getBestAnswers(
-      startLogits: number[], endLogits: number[], origTokens: Token[],
-      tokenToOrigMap: {[key: string]: number}, context: string,
-      docIndex = 0): Answer[] {
+    startLogits: number[], endLogits: number[], origTokens: Token[],
+    tokenToOrigMap: { [key: string]: number }, context: string,
+    docIndex = 0): Answer[] {
     // Model uses the closed interval [start, end] for indices.
     const startIndexes = this.getBestIndex(startLogits);
     const endIndexes = this.getBestIndex(endLogits);
@@ -278,7 +285,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
           const length = end - start + 1;
           if (length < MAX_ANSWER_LEN) {
             origResults.push(
-                {start, end, score: startLogits[start] + endLogits[end]});
+              { start, end, score: startLogits[start] + endLogits[end] });
           }
         }
       });
@@ -288,7 +295,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const answers: Answer[] = [];
     for (let i = 0; i < origResults.length; i++) {
       if (i >= PREDICT_ANSWER_NUM ||
-          origResults[i].score < NO_ANSWER_THRESHOLD) {
+        origResults[i].score < NO_ANSWER_THRESHOLD) {
         break;
       }
 
@@ -297,8 +304,8 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
       let endIndex = 0;
       if (origResults[i].start > 0) {
         [convertedText, startIndex, endIndex] = this.convertBack(
-            origTokens, tokenToOrigMap, origResults[i].start,
-            origResults[i].end, context);
+          origTokens, tokenToOrigMap, origResults[i].start,
+          origResults[i].end, context);
       } else {
         convertedText = '';
       }
@@ -330,8 +337,8 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
 
   /** Convert the answer back to original text form. */
   convertBack(
-      origTokens: Token[], tokenToOrigMap: {[key: string]: number},
-      start: number, end: number, context: string): [string, number, number] {
+    origTokens: Token[], tokenToOrigMap: { [key: string]: number },
+    start: number, end: number, context: string): [string, number, number] {
     // Shifted index is: index of logits + offset.
     const shiftedStart = start + OUTPUT_OFFSET;
     const shiftedEnd = end + OUTPUT_OFFSET;
@@ -340,8 +347,8 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
     const startCharIndex = origTokens[startIndex].index;
 
     const endCharIndex = endIndex < origTokens.length - 1 ?
-        origTokens[endIndex + 1].index - 1 :
-        origTokens[endIndex].index + origTokens[endIndex].text.length;
+      origTokens[endIndex + 1].index - 1 :
+      origTokens[endIndex].index + origTokens[endIndex].text.length;
 
     return [
       context.slice(startCharIndex, endCharIndex + 1).trim(), startCharIndex,
@@ -351,7 +358,7 @@ class QuestionAndAnswerImpl implements QuestionAndAnswer {
 }
 
 export async function load(modelConfig?: ModelConfig):
-    Promise<QuestionAndAnswer> {
+  Promise<QuestionAndAnswer> {
   const mobileBert = new QuestionAndAnswerImpl(modelConfig);
   await mobileBert.load();
   return mobileBert;

@@ -15,6 +15,7 @@
  * =============================================================================
  */
 import * as tf from '@tensorflow/tfjs-core';
+import { ModelConfig } from './question_and_answer';
 
 const SEPERATOR = '\u2581';
 export const UNK_INDEX = 100;
@@ -24,18 +25,18 @@ export const SEP_INDEX = 102;
 export const SEP_TOKEN = '[SEP]';
 export const NFKC_TOKEN = 'NFKC';
 export const VOCAB_BASE =
-    'https://tfhub.dev/tensorflow/tfjs-model/mobilebert/1/';
+  'https://tfhub.dev/tensorflow/tfjs-model/mobilebert/1/';
 export const VOCAB_URL = VOCAB_BASE + 'processed_vocab.json?tfjs-format=file';
 /**
  * Class for represent node for token parsing Trie data structure.
  */
 class TrieNode {
   parent: TrieNode;
-  children: {[key: string]: TrieNode} = {};
+  children: { [key: string]: TrieNode } = {};
   end = false;
   score: number;
   index: number;
-  constructor(private key: string) {}
+  constructor(private key: string) { }
 
   getWord(): [string[], number, number] {
     const output: string[] = [];
@@ -132,8 +133,8 @@ export class BertTokenizer {
   /**
    * Load the vacabulary file and initialize the Trie for lookup.
    */
-  async load() {
-    this.vocab = await this.loadVocab();
+  async load(vocabUrl: string) {
+    this.vocab = await this.loadVocab(vocabUrl);
 
     this.trie = new Trie();
     // Actual tokens start at 999.
@@ -143,7 +144,7 @@ export class BertTokenizer {
     }
   }
 
-  private async loadVocab(): Promise<[]> {
+  private async loadVocab(vocabUrl = VOCAB_URL): Promise<[]> {
     return tf.util.fetch(VOCAB_URL).then(d => d.json());
   }
 
@@ -179,7 +180,7 @@ export class BertTokenizer {
       }
       if (isWhitespace(ch)) {
         if (stringBuilder.length > 0 &&
-            stringBuilder[stringBuilder.length - 1] !== ' ') {
+          stringBuilder[stringBuilder.length - 1] !== ' ') {
           stringBuilder.push(' ');
           charOriginalIndex[newCharIndex] = originalCharIndex;
           originalCharIndex += ch.length;
@@ -199,18 +200,18 @@ export class BertTokenizer {
 
   /* Splits punctuation on a piece of text. */
   private runSplitOnPunc(
-      text: string, count: number,
-      charOriginalIndex: number[]): Token[] {
+    text: string, count: number,
+    charOriginalIndex: number[]): Token[] {
     const tokens: Token[] = [];
     let startNewWord = true;
     for (const ch of text) {
       if (isPunctuation(ch)) {
-        tokens.push({text: ch, index: charOriginalIndex[count]});
+        tokens.push({ text: ch, index: charOriginalIndex[count] });
         count += ch.length;
         startNewWord = true;
       } else {
         if (startNewWord) {
-          tokens.push({text: '', index: charOriginalIndex[count]});
+          tokens.push({ text: '', index: charOriginalIndex[count] });
           startNewWord = false;
         }
         tokens[tokens.length - 1].text += ch;
@@ -285,8 +286,8 @@ export class BertTokenizer {
   }
 }
 
-export async function loadTokenizer(): Promise<BertTokenizer> {
+export async function loadTokenizer(config?: ModelConfig): Promise<BertTokenizer> {
   const tokenizer = new BertTokenizer();
-  await tokenizer.load();
+  await tokenizer.load(config.vocabUrl);
   return tokenizer;
 }
